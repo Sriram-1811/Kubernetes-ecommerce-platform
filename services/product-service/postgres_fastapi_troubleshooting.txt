@@ -1,0 +1,290 @@
+PostgreSQL + FastAPI Connection Troubleshooting
+
+## Problem
+
+Python/psycopg2 could not connect to PostgreSQL:
+
+```text
+psycopg2.OperationalError:
+connection to server at "localhost" (::1), port 5432 failed:
+FATAL: password authentication failed for user "hunger_store_app"
+```
+
+Initially, the error was:
+
+```text
+FATAL: Ident authentication failed for user "hunger_store_app"
+```
+
+------------------------------------------------------------------------------
+
+## Troubleshooting Steps
+
+### 1. Verify PostgreSQL is installed
+
+```bash
+psql --version
+```
+
+Example:
+
+```text
+psql (PostgreSQL) 13.23
+```
+
+### 2. Verify PostgreSQL is running
+
+```bash
+sudo systemctl status postgresql
+```
+
+PostgreSQL was running successfully.
+
+### 3. Verify the database exists
+
+```bash
+sudo -u postgres psql
+```
+
+Then:
+
+```sql
+\l
+```
+
+Confirmed:
+
+```text
+hunger_store
+```
+
+### 4. Verify the application role
+
+```sql
+\du hunger_store_app
+```
+
+Then:
+
+```sql
+SELECT rolname, rolcanlogin
+FROM pg_roles
+WHERE rolname = 'hunger_store_app';
+```
+
+Confirmed:
+
+```text
+rolcanlogin = t
+```
+
+So the application user existed and was allowed to log in.
+
+### 5. Check PostgreSQL authentication configuration
+
+```bash
+sudo grep -v '^#' /var/lib/pgsql/data/pg_hba.conf | grep -v '^$'
+```
+
+Initially:
+
+```text
+host    all    all    127.0.0.1/32    ident
+host    all    all    ::1/128         ident
+```
+
+Our Python application was connecting through `localhost`, so PostgreSQL was using `ident` authentication.
+
+### 6. Back up the configuration
+
+```bash
+sudo cp /var/lib/pgsql/data/pg_hba.conf \
+/var/lib/pgsql/data/pg_hba.conf.backup
+```
+
+### 7. Change local TCP authentication to SCRAM
+
+Edit:
+
+```bash
+sudo nano /var/lib/pgsql/data/pg_hba.conf
+```
+
+Changed:
+
+```text
+host    all    all    127.0.0.1/32    ident
+host    all    all    ::1/128         ident
+```
+
+to:
+
+```text
+host    all    all    127.0.0.1/32    scram-sha-256
+host    all    all    ::1/128         scram-sha-256
+```
+
+Then reload:
+
+```bash
+sudo systemctl reload postgresql
+```
+
+### 8. Test the database user directly
+
+```bash
+psql -h localhost -U hunger_store_app -d hunger_store -W
+```
+
+This changed the error from:
+
+```text
+Ident authentication failed
+```
+
+to:
+
+```text
+password authentication failed
+```
+
+That was progress: PostgreSQL was now using password authentication.
+
+### 9. Check the stored password format
+
+As the PostgreSQL administrator:
+
+```sql
+SELECT rolname,
+       rolcanlogin,
+       LEFT(rolpassword, 20) AS password_type
+FROM pg_authid
+WHERE rolname = 'hunger_store_app';
+```
+
+We discovered:
+
+```text
+md53e116e97916c8e97a
+```
+
+The role's password was stored using the **MD5** format, while `pg_hba.conf` required **SCRAM-SHA-256**.
+
+### 10. Change password encryption to SCRAM
+
+Inside `psql`:
+
+```sql
+SET password_encryption = 'scram-sha-256';
+```
+
+Then reset the application user's password:
+
+```sql
+\password hunger_store_app
+```
+
+Enter the password twice.
+
+Verify again:
+
+```sql
+SELECT rolname,
+       LEFT(rolpassword, 20) AS password_type
+FROM pg_authid
+WHERE rolname = 'hunger_store_app';
+```
+
+The stored password now began with:
+
+```text
+SCRAM-SHA-256$
+```
+
+### 11. Test again
+
+```bash
+psql -h localhost -U hunger_store_app -d hunger_store -W
+```
+
+The connection succeeded.
+
+Then:
+
+```bash
+python db_test.py
+```
+
+Result:
+
+```text
+Database connection successful!
+```
+
+---
+
+## Root Cause
+
+The final problem was a **mismatch between the authentication method and the stored password format**:
+
+```text
+pg_hba.conf
+       ↓
+scram-sha-256
+
+        VS
+
+hunger_store_app password
+       ↓
+MD5
+```
+
+They needed to be compatible:
+
+```text
+pg_hba.conf
+       ↓
+scram-sha-256
+
+        +
+
+hunger_store_app password
+       ↓
+SCRAM-SHA-256
+```
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+## Important Lessons
+
+1. `pg_hba.conf` controls how PostgreSQL authenticates clients.
+2. `ident` is different from password authentication.
+3. `scram-sha-256` is password-based authentication.
+4. `rolcanlogin = t` means the PostgreSQL role is allowed to log in.
+5. PostgreSQL roles are separate from Linux users.
+6. `psql` can be used to test the database connection independently of Python.
+7. If `psql` fails with the same authentication error, the problem is not Python/psycopg2.
+8. Always check the stored password format when troubleshooting SCRAM/MD5 authentication.
+9. Make a backup of configuration files before modifying them.
+10. Troubleshoot one layer at a time:
+
+```text
+PostgreSQL service
+        ↓
+Database
+        ↓
+PostgreSQL role
+        ↓
+pg_hba.conf
+        ↓
+Authentication
+        ↓
+psql connection
+        ↓
+Python/psycopg2
+        ↓
+FastAPI
+```
+
+This layered approach makes it much easier to identify where a connection problem actually occurs.
+
