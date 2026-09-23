@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from app.database import get_connection
 
 app = FastAPI()
 
@@ -9,43 +10,19 @@ class Product(BaseModel):
     name: str
     category: str
     price: float
+    currency: str
 
 class ProductCreate(BaseModel):
     name: str
     category: str
     price: float
+    currency: str
 
 class ProductUpdate(BaseModel):
     name: str
     category: str
     price: float
-
-products = [
-    {
-        "id": 1,
-        "name": "HungerTech Wireless Headphones",
-        "category": "Electronics",
-        "price": 79.99
-    },
-    {
-        "id": 2,
-        "name": "HungerTech Smartwatch",
-        "category": "Electronics",
-        "price": 129.99
-    },
-    {
-        "id": 3,
-        "name": "HungerWear Classic Hoodie",
-        "category": "Fashion",
-        "price": 49.99
-    },
-    {
-        "id": 4,
-        "name": "HungerWear Premium T-Shirt",
-        "category": "Fashion",
-        "price": 29.99
-    }
-]
+    currency: str
 
 
 @app.get("/health")
@@ -54,49 +31,163 @@ def health_check():
 
 @app.get("/products", response_model=list[Product])
 def get_products():
-    return products
+    connection = get_connection()
+    cursor = connection.cursor()
 
+    cursor.execute("""
+        SELECT id, name, category, price, currency
+        FROM products
+        ORDER BY id
+    """)
+
+    rows = cursor.fetchall()
+
+    cursor.close()
+    connection.close()
+
+    return [
+        {
+            "id": row[0],
+            "name": row[1],
+            "category": row[2],
+            "price": float(row[3]),
+            "currency": row[4]
+        }
+        for row in rows
+    ]
 
 @app.post("/products", response_model=Product)
 def create_product(product: ProductCreate):
-    new_id = len(products) + 1
+    connection = get_connection()
+    cursor = connection.cursor()
 
-    new_product = {
-        "id": new_id,
-        "name": product.name,
-        "category": product.category,
-        "price": product.price
+    cursor.execute(
+        """
+        INSERT INTO products (name, category, price, currency)
+        VALUES (%s, %s, %s, %s)
+        RETURNING id, name, category, price, currency
+        """,
+        (
+            product.name,
+            product.category,
+            product.price,
+            product.currency
+        )
+    )
+
+    row = cursor.fetchone()
+
+    connection.commit()
+
+    cursor.close()
+    connection.close()
+
+    return {
+        "id": row[0],
+        "name": row[1],
+        "category": row[2],
+        "price": float(row[3]),
+        "currency": row[4]
     }
-
-    products.append(new_product)
-
-    return new_product
 
 @app.put("/products/{product_id}", response_model=Product)
 def update_product(product_id: int, product: ProductUpdate):
-    for existing_product in products:
-        if existing_product["id"] == product_id:
-            existing_product["name"] = product.name
-            existing_product["category"] = product.category
-            existing_product["price"] = product.price
+    connection = get_connection()
+    cursor = connection.cursor()
 
-            return existing_product
+    cursor.execute(
+        """
+        UPDATE products
+        SET name = %s,
+            category = %s,
+            price = %s,
+            currency = %s
+        WHERE id = %s
+        RETURNING id, name, category, price, currency
+        """,
+        (
+            product.name,
+            product.category,
+            product.price,
+            product.currency,
+            product_id
+        )
+    )
 
-    raise HTTPException(status_code=404, detail="Product not found")
+    row = cursor.fetchone()
+
+    if row is None:
+        cursor.close()
+        connection.close()
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    connection.commit()
+
+    cursor.close()
+    connection.close()
+
+    return {
+        "id": row[0],
+        "name": row[1],
+        "category": row[2],
+        "price": float(row[3]),
+        "currency": row[4]
+    }
 
 @app.delete("/products/{product_id}")
 def delete_product(product_id: int):
-    for product in products:
-        if product["id"] == product_id:
-            products.remove(product)
-            return {"message": "Product deleted successfully"}
+    connection = get_connection()
+    cursor = connection.cursor()
 
-    raise HTTPException(status_code=404, detail="Product not found")
+    cursor.execute(
+        """
+        DELETE FROM products
+        WHERE id = %s
+        RETURNING id
+        """,
+        (product_id,)
+    )
+
+    row = cursor.fetchone()
+
+    if row is None:
+        cursor.close()
+        connection.close()
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    connection.commit()
+
+    cursor.close()
+    connection.close()
+
+    return {"message": "Product deleted successfully"}
 
 @app.get("/products/{product_id}", response_model=Product)
 def get_product(product_id: int):
-    for product in products:
-        if product["id"] == product_id:
-            return product
+    connection = get_connection()
+    cursor = connection.cursor()
 
-    raise HTTPException(status_code=404, detail="Product not found")
+    cursor.execute(
+        """
+        SELECT id, name, category, price, currency
+        FROM products
+        WHERE id = %s
+        """,
+        (product_id,)
+    )
+
+    row = cursor.fetchone()
+
+    cursor.close()
+    connection.close()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    return {
+        "id": row[0],
+        "name": row[1],
+        "category": row[2],
+        "price": float(row[3]),
+        "currency": row[4]
+    }
