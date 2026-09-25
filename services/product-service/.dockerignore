@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+db_test.py
+postgres_fastapi_troubleshooting.txt
