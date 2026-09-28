@@ -1,21 +1,47 @@
-function Header() {
+interface HeaderProps {
+  cartCount: number;
+  userName: string;
+  onCartClick: () => void;
+  onProfileClick: () => void;
+}
+
+function Header({
+  cartCount,
+  userName,
+  onCartClick,
+  onProfileClick,
+}: HeaderProps) {
   return (
     <header className="site-header">
-      <div className="header-inner">
-        <a href="/" className="brand">
-          HUNGER STORE
-        </a>
+      <div className="brand">
+        <div className="brand-mark">H</div>
 
-        <nav className="main-nav">
-          <a href="#fashion">Fashion</a>
-          <a href="#technology">Tech</a>
-          <a href="#featured">New Arrivals</a>
-        </nav>
-
-        <button type="button" className="cart-button">
-          Cart <span>0</span>
-        </button>
+        <div>
+          <strong>HUNGER STORE</strong>
+          <span>Hungry for Fashion. Hungry for Tech.</span>
+        </div>
       </div>
+
+      <nav>
+        <a href="#featured">Shop</a>
+
+        <button
+          type="button"
+          onClick={onProfileClick}
+          className="nav-button"
+        >
+          {userName || "Account"}
+        </button>
+
+        <button
+          type="button"
+          onClick={onCartClick}
+          className="cart-button"
+        >
+          Cart
+          <span>{cartCount}</span>
+        </button>
+      </nav>
     </header>
   );
 }

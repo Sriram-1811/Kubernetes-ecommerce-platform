@@ -1,11 +1,19 @@
 from fastapi import FastAPI, HTTPException
-
+from fastapi.middleware.cors import CORSMiddleware
 from app.database import get_connection
 from app.models import OrderCreate, OrderUpdate
 
 
 app = FastAPI(title="Hunger Store Order Service")
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://10.2.0.4:5173",
+        "http://52.154.129.246:5173",
+        ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health")
 def health():
