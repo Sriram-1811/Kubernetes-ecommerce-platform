@@ -1,39 +1,30 @@
+import { useEffect, useState } from "react";
 import Header from "../components/Header";
 import ProductCard from "../components/ProductCard";
+import { getProducts } from "../services/api";
 import type { Product } from "../types/product";
 
-const featuredProducts: Product[] = [
-  {
-    id: 1,
-    name: "HungerTech Smartwatch Pro",
-    category: "Electronics",
-    price: 149.99,
-    currency: "USD",
-  },
-  {
-    id: 2,
-    name: "HungerTech Wireless Headphones",
-    category: "Electronics",
-    price: 89.99,
-    currency: "USD",
-  },
-  {
-    id: 3,
-    name: "Hunger Fashion Classic Jacket",
-    category: "Fashion",
-    price: 79.99,
-    currency: "USD",
-  },
-  {
-    id: 4,
-    name: "HungerTech Mechanical Keyboard",
-    category: "Electronics",
-    price: 119.99,
-    currency: "USD",
-  },
-];
-
 function Home() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const data = await getProducts();
+        setProducts(data);
+      } catch (err) {
+        console.error(err);
+        setError("Unable to load products.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadProducts();
+  }, []);
+
   return (
     <>
       <Header />
@@ -56,7 +47,7 @@ function Home() {
 
             <div className="hero-actions">
               <button type="button" className="primary-button">
-                Shop Fashion
+                Explore Fashion
               </button>
 
               <button type="button" className="secondary-button">
@@ -95,7 +86,7 @@ function Home() {
                 <span>Gadgets & electronics</span>
               </div>
 
-              <button type="button">Explore →</button>
+              <button type="button">Shop now →</button>
             </article>
           </div>
         </section>
@@ -112,14 +103,20 @@ function Home() {
             </button>
           </div>
 
-          <div className="product-grid">
-            {featuredProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-              />
-            ))}
-          </div>
+          {loading && <p>Loading products...</p>}
+
+          {error && <p>{error}</p>}
+
+          {!loading && !error && (
+            <div className="product-grid">
+              {products.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </main>
 
